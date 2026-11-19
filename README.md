@@ -17,7 +17,7 @@ Open source under the MIT license.
 
 Pictures and shots stay in the browser (IndexedDB). Generation calls the xAI API from the server unless you change Settings. Set `XAI_API_KEY` in the environment for the built-in engine. Do not commit that key.
 
-In Settings you can point stills at another image API (`POST /v1/images/generations`) or choose a checkpoint model of any type. The studio prompt, aspect, batch, and laptop steps drive that render. The checkpoint file name is what the local server loads. Shots stay on the built-in engine.
+In Settings you can point stills at another image API (`POST /v1/images/generations`) or choose an image checkpoint and a video checkpoint. The studio prompt, aspect, batch, length, and laptop steps drive that render. The file names are what the local server loads.
 
 ## Install
 
@@ -66,13 +66,13 @@ npm run dev
 
 No key is required for this path.
 
-1. Start the local model server on this machine at `http://127.0.0.1:8188`, with cross-origin access open. The checkpoint file you choose has to be one that server can load.
+1. Start the local model server on this machine at `http://127.0.0.1:8188`, with cross-origin access open. It has to be able to load both files.
 2. Open the studio and go to **Settings**.
 3. Choose **Checkpoint**.
-4. Choose the model file from this computer, a jump drive, or an external drive. Any checkpoint type. The studio keeps the file name.
-5. On the stage, set **Stills** and render.
+4. Choose an image checkpoint and a video checkpoint from this computer, a jump drive, or an external drive.
+5. On the stage, **Stills** uses the image file. A shot uses the video file.
 
-The open project supplies the prompt. Aspect, batch, and the laptop steps (Efficient, Balanced, or Full) set the size of the render. A checkpoint makes stills only. Shots stay on **Built-in**.
+The open project supplies the prompt. Aspect, batch, length, and the laptop steps set the render. Efficient caps a shot at 17 frames, Balanced at 33, Full at 81.
 
 ### Another image API
 

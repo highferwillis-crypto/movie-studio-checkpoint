@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { askEditor, beginShot, generateCustom, generateStills, planNextShot, pollShot } from "@/lib/studio/api.functions";
-import { runLocalCheckpoint } from "@/lib/studio/comfy-local";
+import { runLocalCheckpoint, runLocalVideo } from "@/lib/studio/comfy-local";
 import { dbAll, dbDel, dbDelBlob, dbGetBlob, dbPut, dbPutBlob, uid } from "@/lib/studio/idb";
 import { fileToJpegDataUrl, probeDuration, videoPoster } from "@/lib/studio/media";
 import {
@@ -573,37 +573,62 @@ export const useStudio = create<StudioState>((set, get) => ({
       set({ warnings: compiled.warnings });
       const settings = get().settings;
       if (settings.engine === "comfy") {
-        if (get().mode !== "still") {
-          set({
-            busy: false,
-            busyLabel: "",
-            error: "A checkpoint model renders stills to the studio specs. Switch Run to Built-in for a shot, or stay on Stills.",
+        if (get().mode === "still") {
+          const size = frameSize(get().aspect, settings.maxSide);
+          set({ busyLabel: `Image checkpoint · ${size.width}×${size.height} · ${settings.steps} steps` });
+          const blobs = await runLocalCheckpoint({
+            settings,
+            prompt: compiled.prompt,
+            aspect: get().aspect,
+            batch: Math.min(batchCap(settings.profile), Math.max(1, Math.round(get().batch) || 1)),
+            cancelled: () => token !== generation,
           });
+          if (token !== generation) return;
+          const projectId = get().activeProjectId;
+          const folderId = projectId ? folderIdFor(get().folders, projectId, "stills") : "";
+          const candidates: Candidate[] = blobs.map((blob, index) => ({
+            id: uid(),
+            url: URL.createObjectURL(blob),
+            blob,
+            prompt: compiled.prompt,
+            title: `Still ${index + 1}`,
+            tags: "",
+            folderId,
+          }));
+          for (const old of get().candidates) URL.revokeObjectURL(old.url);
+          set({ candidates, busy: false, busyLabel: "", notice: "Stills are in the bay. Nothing is filed until you keep one." });
           return;
         }
-        const size = frameSize(get().aspect, settings.maxSide);
-        set({ busyLabel: `Checkpoint · ${size.width}×${size.height} · ${settings.steps} steps` });
-        const blobs = await runLocalCheckpoint({
+        set({ busyLabel: "Video checkpoint…" });
+        const blob = await runLocalVideo({
           settings,
           prompt: compiled.prompt,
           aspect: get().aspect,
-          batch: Math.min(batchCap(settings.profile), Math.max(1, Math.round(get().batch) || 1)),
+          seconds: get().duration,
+          fps: get().cadence,
           cancelled: () => token !== generation,
         });
         if (token !== generation) return;
+        const url = URL.createObjectURL(blob);
+        const duration = (await probeDuration(blob)) || get().duration;
+        if (get().preview) URL.revokeObjectURL(get().preview!.url);
         const projectId = get().activeProjectId;
-        const folderId = projectId ? folderIdFor(get().folders, projectId, "stills") : "";
-        const candidates: Candidate[] = blobs.map((blob, index) => ({
-          id: uid(),
-          url: URL.createObjectURL(blob),
-          blob,
-          prompt: compiled.prompt,
-          title: `Still ${index + 1}`,
-          tags: "",
-          folderId,
-        }));
-        for (const old of get().candidates) URL.revokeObjectURL(old.url);
-        set({ candidates, busy: false, busyLabel: "", notice: "Stills are in the bay. Nothing is filed until you keep one." });
+        set({
+          preview: {
+            url,
+            blob,
+            duration,
+            prompt: compiled.prompt,
+            title: "Shot",
+            tags: "",
+            folderId: projectId ? folderIdFor(get().folders, projectId, "reels") : "",
+            savedTag: "",
+          },
+          playerMode: "shot",
+          busy: false,
+          busyLabel: "",
+          notice: "Shot is in the player. File it when it belongs in the project.",
+        });
         return;
       }
       if (settings.engine === "api" && get().mode === "still") {

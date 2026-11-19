@@ -8,6 +8,7 @@ export type StudioSettings = {
   apiKey: string;
   comfyHost: string;
   checkpoint: string;
+  videoCheckpoint: string;
   profile: LaptopProfile;
   steps: number;
   cfg: number;
@@ -21,6 +22,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   apiKey: "",
   comfyHost: "http://127.0.0.1:8188",
   checkpoint: "",
+  videoCheckpoint: "",
   profile: "balanced",
   steps: 20,
   cfg: 7,

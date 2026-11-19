@@ -98,17 +98,17 @@ export function SettingsPane() {
         ) : null}
         {settings.engine === "comfy" ? (
           <div className="grid gap-3">
-            <Field label="Checkpoint model">
+            <Field label="Image checkpoint">
               <input
                 value={settings.checkpoint}
                 onChange={(event) => updateSettings({ checkpoint: event.target.value })}
-                placeholder="Choose a model, any type"
-                aria-label="Checkpoint model"
+                placeholder="Image model file"
+                aria-label="Image checkpoint"
                 className={controlClass}
               />
             </Field>
             <label className="flex h-11 cursor-pointer items-center justify-center rounded-md border border-dashed border-line text-sm text-stone">
-              Choose a model file
+              Choose an image checkpoint
               <input
                 type="file"
                 accept=".safetensors,.ckpt,.pt,.pth,.bin,.gguf,.sft"
@@ -121,6 +121,29 @@ export function SettingsPane() {
                 }}
               />
             </label>
+            <Field label="Video checkpoint">
+              <input
+                value={settings.videoCheckpoint}
+                onChange={(event) => updateSettings({ videoCheckpoint: event.target.value })}
+                placeholder="Video model file"
+                aria-label="Video checkpoint"
+                className={controlClass}
+              />
+            </Field>
+            <label className="flex h-11 cursor-pointer items-center justify-center rounded-md border border-dashed border-line text-sm text-stone">
+              Choose a video checkpoint
+              <input
+                type="file"
+                accept=".safetensors,.ckpt,.pt,.pth,.bin,.gguf,.sft"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  updateSettings({ videoCheckpoint: file.name });
+                }}
+              />
+            </label>
             <Field label="Local server">
               <input
                 value={settings.comfyHost}
@@ -130,7 +153,7 @@ export function SettingsPane() {
               />
             </Field>
             <p className="text-xs text-mist">
-              Any checkpoint type. Pick it from this computer, a jump drive, or an external. The studio uses that file name, then renders to the open project: the prompt, the aspect, the batch, and the laptop steps. The server has to already be running and able to load that file. Shots stay on Built-in.
+              Pick an image checkpoint and a video checkpoint from this computer, a jump drive, or an external. Stills use the image file. Shots use the video file. The studio still sets the prompt, the aspect, the length, and the laptop steps. The local server has to be running and able to load each file.
             </p>
           </div>
         ) : null}
