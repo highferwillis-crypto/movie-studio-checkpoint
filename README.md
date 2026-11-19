@@ -74,6 +74,10 @@ No key is required for this path.
 
 The open project supplies the prompt. Aspect, batch, length, and the laptop steps set the render. Efficient caps a shot at 17 frames, Balanced at 33, Full at 81.
 
+### Character voices
+
+On the stage, **Voice sampler** takes your own cartoon or anime recordings. Name the file as the character. That name is the tag. A shot that uses the name is told to speak in that voice. The audio file stays in the project. It is not sent to the video model as a cloned voice.
+
 ### Another image API
 
 In **Settings**, choose **API server**. Set the address, the model, and the key. The server must accept `POST /images/generations` with a bearer key, a prompt, `n`, and `size`. The key stays in this browser. It is not written into the settings file.

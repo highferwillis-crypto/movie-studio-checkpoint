@@ -268,6 +268,10 @@ export function compileScene(input: {
     if (/^image\d+$/i.test(token)) continue;
     const asset = input.library.find((item) => matchesTag(item, token));
     if (!asset || asset.kind === "image") continue;
+    if (asset.kind === "voice") {
+      others.push(`@${asset.tag} speaks only in the filed voice sample named "${asset.title}". Do not substitute another voice.`);
+      continue;
+    }
     const blurb = (asset.prompt || asset.text).slice(0, 400);
     others.push(`@${asset.tag} (${asset.folder}, ${asset.kind}): ${blurb || "Use the filed material."}`);
   }

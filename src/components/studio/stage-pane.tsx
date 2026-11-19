@@ -2,6 +2,7 @@ import { IMAGE_ASPECTS, STYLES, VIDEO_ASPECTS, formatTime, lintScene, parseTagLi
 import { useStudio } from "@/lib/studio/store";
 import { Btn, Field, Select, controlClass } from "@/components/studio/ui";
 import { MotionPlayer } from "@/components/studio/player";
+import { VoiceSampler } from "@/components/studio/voice-sampler";
 
 export function StagePane() {
   const mode = useStudio((state) => state.mode);
@@ -257,6 +258,8 @@ export function StagePane() {
           </ul>
         ) : null}
       </div>
+
+      <VoiceSampler />
 
       <div
         className="rounded-xl border border-dashed border-line p-3"

@@ -121,6 +121,7 @@ type StudioState = {
   discardPending: (id: string) => void;
   filePending: (id: string) => Promise<void>;
   saveNote: (title: string, body: string) => Promise<void>;
+  fileVoice: (name: string, file: File) => Promise<void>;
   setMode: (mode: "still" | "motion") => void;
   setPrompt: (prompt: string) => void;
   updateSettings: (patch: Partial<StudioSettings>) => void;
@@ -477,6 +478,48 @@ export const useStudio = create<StudioState>((set, get) => ({
       activeFolderId: folderId,
       error: "",
     });
+  },
+
+  fileVoice: async (name, file) => {
+    const projectId = get().activeProjectId;
+    if (!projectId) {
+      set({ error: "Open a project before filing a voice." });
+      return;
+    }
+    const title = name.trim();
+    if (!title) {
+      set({ error: "Name the sample as the character." });
+      return;
+    }
+    if (!file.type.startsWith("audio") && !/\.(wav|mp3|m4a|ogg|flac)$/i.test(file.name)) {
+      set({ error: "Choose an audio file." });
+      return;
+    }
+    const folderId = folderIdFor(get().folders, projectId, "voices");
+    const tags = claimTags(get, projectId, [tagFromTitle(title)]);
+    const tag = tags[0] || "Voice";
+    try {
+      const asset = await makeStoredAsset({
+        projectId,
+        folderId,
+        title,
+        tag,
+        tags,
+        kind: "voice",
+        mime: file.type || "audio/mpeg",
+        prompt: `Voice of ${title}. When this character speaks in a shot, use this voice and no other.`,
+        text: "",
+        blob: file,
+      });
+      set({
+        assets: [asset, ...get().assets],
+        notice: `Filed @${tag} as the voice of ${title}. A shot that names them is told to use it.`,
+        error: "",
+        activeFolderId: folderId,
+      });
+    } catch (error) {
+      set({ error: messageOf(error) });
+    }
   },
 
   setMode: (mode) => {
