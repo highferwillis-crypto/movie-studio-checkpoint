@@ -680,10 +680,10 @@ export const useStudio = create<StudioState>((set, get) => ({
         const url = URL.createObjectURL(voiced.blob);
         const voiceUrl = voiced.voiceBlob ? URL.createObjectURL(voiced.voiceBlob) : undefined;
         const duration = (await probeDuration(voiced.blob)) || get().duration;
-        if (get().preview) {
-          URL.revokeObjectURL(get().preview.url);
-          const oldVoice = get().preview.voiceUrl;
-          if (oldVoice) URL.revokeObjectURL(oldVoice);
+        const previous = get().preview;
+        if (previous) {
+          URL.revokeObjectURL(previous.url);
+          if (previous.voiceUrl) URL.revokeObjectURL(previous.voiceUrl);
         }
         const projectId = get().activeProjectId;
         set({
@@ -834,10 +834,10 @@ export const useStudio = create<StudioState>((set, get) => ({
       const url = URL.createObjectURL(voiced.blob);
       const voiceUrl = voiced.voiceBlob ? URL.createObjectURL(voiced.voiceBlob) : undefined;
       const duration = (await probeDuration(voiced.blob)) || get().duration;
-      if (get().preview) {
-        URL.revokeObjectURL(get().preview.url);
-        const oldVoice = get().preview.voiceUrl;
-        if (oldVoice) URL.revokeObjectURL(oldVoice);
+      const previous = get().preview;
+      if (previous) {
+        URL.revokeObjectURL(previous.url);
+        if (previous.voiceUrl) URL.revokeObjectURL(previous.voiceUrl);
       }
       const projectId = get().activeProjectId;
       set({
