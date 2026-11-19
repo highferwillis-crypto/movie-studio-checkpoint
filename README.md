@@ -76,7 +76,7 @@ The open project supplies the prompt. Aspect, batch, length, and the laptop step
 
 ### Character voices
 
-On the stage, **Voice sampler** takes your own cartoon or anime recordings. Name the file as the character. That name is the tag. A shot that uses the name is told to speak in that voice. The audio file stays in the project. It is not sent to the video model as a cloned voice.
+On the stage, **Voice sampler** records a sample or uploads one you already have. Name it as the character. The file is stored in that project’s Voices folder, and the name is the tag. A shot that uses the name is told to speak in that voice. The audio file is not sent to the video model as a cloned voice.
 
 ### Another image API
 
