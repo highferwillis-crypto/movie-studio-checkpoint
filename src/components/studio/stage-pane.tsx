@@ -348,7 +348,12 @@ export function StagePane() {
               Reel {formatTime(reelSeconds)}
             </Btn>
           </div>
-          <MotionPlayer key={playerShots.map((shot) => shot.url).join("|")} shots={playerShots} onSnapshot={(blob, at) => void addSnapshot(blob, at)} />
+          <MotionPlayer
+            key={playerShots.map((shot) => shot.url).join("|")}
+            shots={playerShots}
+            voiceUrl={playerMode === "shot" ? preview?.voiceUrl : undefined}
+            onSnapshot={(blob, at) => void addSnapshot(blob, at)}
+          />
         </div>
       ) : null}
 

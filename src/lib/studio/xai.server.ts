@@ -300,17 +300,19 @@ export async function planShot(data: {
 
 export async function speakLine(
   text: string,
+  voiceId?: string,
 ): Promise<{ ok: true; audio: string; mime: string } | { ok: false; error: string }> {
   const key = apiKey();
   if (!key) return { ok: false, error: "AI is not available in this environment." };
   const spoken = text.replace(/\s+/g, " ").trim().slice(0, 4000);
   if (!spoken) return { ok: false, error: "Nothing to read." };
+  const voices = voiceId ? [voiceId] : ["ara", "eve"];
   let last = "Could not speak.";
-  for (const voiceId of ["ara", "eve"]) {
+  for (const id of voices) {
     const res = await fetch("https://api.x.ai/v1/tts", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ text: spoken, voice_id: voiceId, language: "en" }),
+      body: JSON.stringify({ text: spoken, voice_id: id, language: "en" }),
       signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) {
@@ -321,4 +323,52 @@ export async function speakLine(
     return { ok: true, audio: bytes.toString("base64"), mime: res.headers.get("content-type") || "audio/mpeg" };
   }
   return { ok: false, error: last };
+}
+
+export async function registerCustomVoice(
+  name: string,
+  wavBase64: string,
+): Promise<{ ok: true; voiceId: string } | { ok: false; error: string }> {
+  const key = apiKey();
+  if (!key) return { ok: false, error: "Voice cloning needs the built-in key. The sample can still be filed." };
+  const bytes = Buffer.from(wavBase64, "base64");
+  if (!bytes.length) return { ok: false, error: "The voice sample was empty." };
+  const form = new FormData();
+  form.append("name", name.slice(0, 80));
+  form.append("language", "en");
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: "audio/wav" }), "voice.wav");
+  const res = await fetch("https://api.x.ai/v1/custom-voices", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}` },
+    body: form,
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) return { ok: false, error: await errorMessage(res, "Could not make a character voice from that sample") };
+  const body = (await res.json()) as { voice_id?: string };
+  if (!body.voice_id) return { ok: false, error: "The voice service did not return an id." };
+  return { ok: true, voiceId: body.voice_id };
+}
+
+export async function transcribeSpeech(
+  audioBase64: string,
+  mime: string,
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  const key = apiKey();
+  if (!key) return { ok: false, error: "Speech to the editor needs the built-in key." };
+  const bytes = Buffer.from(audioBase64, "base64");
+  if (!bytes.length) return { ok: false, error: "The recording was empty." };
+  const form = new FormData();
+  form.append("model", "grok-voice-transcribe-2.0");
+  form.append("file", new Blob([new Uint8Array(bytes)], { type: mime || "audio/webm" }), "speech.webm");
+  const res = await fetch("https://api.x.ai/v1/stt", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}` },
+    body: form,
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) return { ok: false, error: await errorMessage(res, "Could not hear that") };
+  const body = (await res.json()) as { text?: string };
+  const text = body.text?.trim() ?? "";
+  if (!text) return { ok: false, error: "No words were heard." };
+  return { ok: true, text };
 }

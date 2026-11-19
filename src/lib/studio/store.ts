@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import { askEditor, beginShot, generateCustom, generateStills, planNextShot, pollShot } from "@/lib/studio/api.functions";
+import { askEditor, beginShot, generateCustom, generateStills, planNextShot, pollShot, registerVoice, speakReply } from "@/lib/studio/api.functions";
 import { runLocalCheckpoint, runLocalVideo } from "@/lib/studio/comfy-local";
 import { dbAll, dbDel, dbDelBlob, dbGetBlob, dbPut, dbPutBlob, uid } from "@/lib/studio/idb";
-import { fileToJpegDataUrl, probeDuration, videoPoster } from "@/lib/studio/media";
+import { blobToWavBase64, fileToJpegDataUrl, mixVoiceOntoVideo, probeDuration, videoPoster } from "@/lib/studio/media";
 import {
   STYLES,
   buildDigest,
@@ -88,6 +88,7 @@ type StudioState = {
   pinFirst: boolean;
   absolute: boolean;
   settings: StudioSettings;
+  activeVoiceId: string | null;
   targetSeconds: number;
   strip: StripItem[];
   candidates: Candidate[];
@@ -122,6 +123,7 @@ type StudioState = {
   filePending: (id: string) => Promise<void>;
   saveNote: (title: string, body: string) => Promise<void>;
   fileVoice: (name: string, file: File) => Promise<void>;
+  setActiveVoice: (id: string | null) => void;
   setMode: (mode: "still" | "motion") => void;
   setPrompt: (prompt: string) => void;
   updateSettings: (patch: Partial<StudioSettings>) => void;
@@ -183,6 +185,7 @@ export const useStudio = create<StudioState>((set, get) => ({
   pinFirst: false,
   absolute: true,
   settings: readSettings(),
+  activeVoiceId: null,
   targetSeconds: 120,
   strip: [],
   candidates: [],
@@ -513,14 +516,33 @@ export const useStudio = create<StudioState>((set, get) => ({
       });
       set({
         assets: [asset, ...get().assets],
-        notice: `Filed @${tag} as the voice of ${title}. A shot that names them is told to use it.`,
+        notice: `Filing @${tag}. Making it the character voice…`,
         error: "",
         activeFolderId: folderId,
+      });
+      const wavBase64 = await blobToWavBase64(file);
+      const registered = await registerVoice({ data: { name: title, wavBase64 } });
+      if (!registered.ok) {
+        set({
+          error: registered.error,
+          notice: `Filed @${tag} in Voices. It is not a usable character voice until the sample can be registered.`,
+        });
+        return;
+      }
+      const voiced = { ...asset, voiceId: registered.voiceId };
+      await dbPut("assets", voiced);
+      set({
+        assets: [voiced, ...get().assets.filter((item) => item.id !== asset.id)],
+        activeVoiceId: voiced.id,
+        notice: `@${tag} is the selected character voice. The next shot speaks in it.`,
+        error: "",
       });
     } catch (error) {
       set({ error: messageOf(error) });
     }
   },
+
+  setActiveVoice: (id) => set({ activeVoiceId: id }),
 
   setMode: (mode) => {
     const aspects = mode === "still" ? ["16:9", "21:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "2:1"] : ["16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16"];
@@ -652,25 +674,34 @@ export const useStudio = create<StudioState>((set, get) => ({
           cancelled: () => token !== generation,
         });
         if (token !== generation) return;
-        const url = URL.createObjectURL(blob);
-        const duration = (await probeDuration(blob)) || get().duration;
-        if (get().preview) URL.revokeObjectURL(get().preview!.url);
+        set({ busyLabel: "Speaking in the selected voice…" });
+        const voiced = await speakShot(get, blob, compiled.prompt);
+        if (token !== generation) return;
+        const url = URL.createObjectURL(voiced.blob);
+        const voiceUrl = voiced.voiceBlob ? URL.createObjectURL(voiced.voiceBlob) : undefined;
+        const duration = (await probeDuration(voiced.blob)) || get().duration;
+        if (get().preview) {
+          URL.revokeObjectURL(get().preview.url);
+          const oldVoice = get().preview.voiceUrl;
+          if (oldVoice) URL.revokeObjectURL(oldVoice);
+        }
         const projectId = get().activeProjectId;
         set({
           preview: {
             url,
-            blob,
+            blob: voiced.blob,
             duration,
             prompt: compiled.prompt,
             title: "Shot",
             tags: "",
             folderId: projectId ? folderIdFor(get().folders, projectId, "reels") : "",
             savedTag: "",
+            voiceUrl,
           },
           playerMode: "shot",
           busy: false,
           busyLabel: "",
-          notice: "Shot is in the player. File it when it belongs in the project.",
+          notice: voiced.note || "Shot is in the player. File it when it belongs in the project.",
         });
         return;
       }
@@ -796,29 +827,35 @@ export const useStudio = create<StudioState>((set, get) => ({
         throw new Error(payload?.error || "Could not download the shot.");
       }
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const duration = (await probeDuration(blob)) || get().duration;
-      if (token !== generation) {
-        URL.revokeObjectURL(url);
-        return;
+      if (token !== generation) return;
+      set({ busyLabel: "Speaking in the selected voice…" });
+      const voiced = await speakShot(get, blob, compiled.prompt);
+      if (token !== generation) return;
+      const url = URL.createObjectURL(voiced.blob);
+      const voiceUrl = voiced.voiceBlob ? URL.createObjectURL(voiced.voiceBlob) : undefined;
+      const duration = (await probeDuration(voiced.blob)) || get().duration;
+      if (get().preview) {
+        URL.revokeObjectURL(get().preview.url);
+        const oldVoice = get().preview.voiceUrl;
+        if (oldVoice) URL.revokeObjectURL(oldVoice);
       }
-      if (get().preview) URL.revokeObjectURL(get().preview!.url);
       const projectId = get().activeProjectId;
       set({
         preview: {
           url,
-          blob,
+          blob: voiced.blob,
           duration,
           prompt: compiled.prompt,
           title: "Shot",
           tags: "",
           folderId: projectId ? folderIdFor(get().folders, projectId, "reels") : "",
           savedTag: "",
+          voiceUrl,
         },
         playerMode: "shot",
         busy: false,
         busyLabel: "",
-        notice: "Shot is in the player. File it when it belongs in the project.",
+        notice: voiced.note || "Shot is in the player. File it when it belongs in the project.",
       });
     } catch (error) {
       if (token !== generation) return;
@@ -887,7 +924,10 @@ export const useStudio = create<StudioState>((set, get) => ({
 
   discardPreview: () => {
     const preview = get().preview;
-    if (preview) URL.revokeObjectURL(preview.url);
+    if (preview) {
+      URL.revokeObjectURL(preview.url);
+      if (preview.voiceUrl) URL.revokeObjectURL(preview.voiceUrl);
+    }
     set({ preview: null, playerMode: get().playShots.length ? "reel" : "shot" });
   },
 
@@ -1433,6 +1473,27 @@ async function queueUploads(
     notice: "Name it and add tags, then file it.",
     error: "",
   });
+}
+
+async function speakShot(
+  get: () => StudioState,
+  blob: Blob,
+  prompt: string,
+): Promise<{ blob: Blob; voiceBlob: Blob | null; note: string }> {
+  const voice = get().assets.find((asset) => asset.id === get().activeVoiceId && asset.voiceId);
+  if (!voice?.voiceId) return { blob, voiceBlob: null, note: "" };
+  const spoken = await speakReply({ data: { text: prompt, voiceId: voice.voiceId } });
+  if (!spoken.ok) return { blob, voiceBlob: null, note: spoken.error };
+  const binary = atob(spoken.audio);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  const voiceBlob = new Blob([bytes], { type: spoken.mime || "audio/mpeg" });
+  try {
+    const mixed = await mixVoiceOntoVideo(blob, voiceBlob);
+    return { blob: mixed, voiceBlob: null, note: `${voice.title} speaks in this shot.` };
+  } catch {
+    return { blob, voiceBlob, note: `${voice.title}'s voice plays with this shot.` };
+  }
 }
 
 function uniqueTag(get: () => StudioState, projectId: string, base: string): string {

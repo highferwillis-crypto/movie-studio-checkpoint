@@ -7,11 +7,14 @@ import { formatTime } from "@/lib/studio/prompt";
 export function MotionPlayer({
   shots,
   onSnapshot,
+  voiceUrl,
 }: {
   shots: { url: string; duration: number; label: string }[];
   onSnapshot: (blob: Blob, at: number) => void;
+  voiceUrl?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const voiceRef = useRef<HTMLAudioElement>(null);
   const pending = useRef<number | null>(null);
   const shotsRef = useRef(shots);
   shotsRef.current = shots;
@@ -46,10 +49,19 @@ export function MotionPlayer({
 
   useEffect(() => {
     const video = videoRef.current;
+    const voice = voiceRef.current;
     if (!video) return;
-    if (playing) void video.play().catch(() => setPlaying(false));
-    else video.pause();
-  }, [playing, index]);
+    if (playing) {
+      if (voice && voiceUrl) {
+        voice.currentTime = video.currentTime || 0;
+        void voice.play().catch(() => undefined);
+      }
+      void video.play().catch(() => setPlaying(false));
+    } else {
+      video.pause();
+      voice?.pause();
+    }
+  }, [playing, index, voiceUrl]);
 
   function seek(seconds: number) {
     const list = shotsRef.current;
@@ -89,10 +101,12 @@ export function MotionPlayer({
           setGlobal(acc + event.currentTarget.currentTime);
         }}
         onEnded={() => {
+          voiceRef.current?.pause();
           if (index < shots.length - 1) setIndex(index + 1);
           else setPlaying(false);
         }}
       />
+      {voiceUrl ? <audio ref={voiceRef} src={voiceUrl} preload="auto" /> : null}
       <div className="flex flex-col gap-3 p-3">
         <input
           aria-label="Timeline"

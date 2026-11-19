@@ -39,6 +39,7 @@ export type Asset = {
   thumb: string;
   duration: number;
   createdAt: number;
+  voiceId?: string;
 };
 
 export type ChatMsg = {
@@ -102,6 +103,7 @@ export type PreviewShot = {
   tags: string;
   folderId: string;
   savedTag: string;
+  voiceUrl?: string;
 };
 
 export type PendingUpload = {

@@ -94,7 +94,7 @@ The open project supplies the prompt. Aspect, batch, length, and the laptop step
 
 ### Character voices
 
-On the stage, **Voice sampler** records a sample or uploads one you already have. Name it as the character. The file is stored in that project’s Voices folder, and the name is the tag. A shot that uses the name is told to speak in that voice. The audio file is not sent to the video model as a cloned voice.
+On the stage, **Voice sampler** records a sample or uploads one. Name it as the character. Select **Use this voice**. The next shot is spoken in that voice and the voice is laid onto the picture when the browser can join them. The editor’s **Talk** button hears the microphone and sends the words. **Voice on** reads the reply aloud. Both need the built-in key.
 
 ### Another image API
 

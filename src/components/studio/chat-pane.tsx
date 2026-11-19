@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { parseNoteBlock } from "@/lib/studio/prompt";
+import { transcribeSpeech } from "@/lib/studio/api.functions";
 import { useStudio } from "@/lib/studio/store";
 import { playSpeech, setVoiceEnabled, voiceEnabled } from "@/components/studio/speech";
 import { Btn } from "@/components/studio/ui";
@@ -15,7 +16,9 @@ export function ChatPane() {
   const saveNote = useStudio((state) => state.saveNote);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [voice, setVoice] = useState(true);
+  const [listening, setListening] = useState(false);
   const [speakError, setSpeakError] = useState("");
+  const recorder = useRef<MediaRecorder | null>(null);
   const scope = activeProjectId ?? "free";
   const thread = chats.filter((message) => message.scope === scope);
   const project = projects.find((item) => item.id === activeProjectId);
@@ -48,6 +51,7 @@ export function ChatPane() {
         >
           {voice ? "Voice on" : "Voice off"}
         </Btn>
+        <p className="mt-2 text-xs text-mist">Voice on reads the reply aloud. Talk records you and sends the words.</p>
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
         {thread.length === 0 ? (
@@ -115,6 +119,59 @@ export function ChatPane() {
         />
         <Btn type="submit" tone="solid" disabled={chatBusy || !chatInput.trim()} className="shrink-0">
           Send
+        </Btn>
+        <Btn
+          type="button"
+          tone={listening ? "solid" : "quiet"}
+          className="shrink-0"
+          disabled={chatBusy}
+          onClick={() => {
+            if (listening) {
+              recorder.current?.stop();
+              return;
+            }
+            setSpeakError("");
+            void navigator.mediaDevices
+              .getUserMedia({ audio: true })
+              .then((stream) => {
+                const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
+                const media = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+                const chunks: Blob[] = [];
+                media.ondataavailable = (event) => {
+                  if (event.data.size) chunks.push(event.data);
+                };
+                media.onstop = () => {
+                  stream.getTracks().forEach((track) => track.stop());
+                  setListening(false);
+                  const blob = new Blob(chunks, { type: media.mimeType || "audio/webm" });
+                  void blob
+                    .arrayBuffer()
+                    .then((buffer) => {
+                      const bytes = new Uint8Array(buffer);
+                      let binary = "";
+                      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+                      return transcribeSpeech({ data: { audioBase64: btoa(binary), mime: blob.type || "audio/webm" } });
+                    })
+                    .then((result) => {
+                      if (!result.ok) {
+                        setSpeakError(result.error);
+                        return;
+                      }
+                      setChatInput(result.text);
+                      void sendChat();
+                    })
+                    .catch((error: unknown) => {
+                      setSpeakError(error instanceof Error ? error.message : "Could not hear that.");
+                    });
+                };
+                recorder.current = media;
+                media.start();
+                setListening(true);
+              })
+              .catch(() => setSpeakError("The microphone was not available."));
+          }}
+        >
+          {listening ? "Stop" : "Talk"}
         </Btn>
       </form>
     </div>

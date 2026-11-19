@@ -26,6 +26,8 @@ export function VoiceSampler() {
   const projectId = useStudio((state) => state.activeProjectId);
   const assets = useStudio((state) => state.assets);
   const fileVoice = useStudio((state) => state.fileVoice);
+  const activeVoiceId = useStudio((state) => state.activeVoiceId);
+  const setActiveVoice = useStudio((state) => state.setActiveVoice);
   const [name, setName] = useState("");
   const [recording, setRecording] = useState(false);
   const [micError, setMicError] = useState("");
@@ -78,7 +80,7 @@ export function VoiceSampler() {
       <div>
         <h2 className="text-sm text-bone">Voice sampler</h2>
         <p className="mt-1 text-xs text-mist">
-          Record a sample, or upload one you already have. Either way it is filed in this project’s Voices folder under the character’s name.
+          Record or upload a sample and name it as the character. Select it. The next shot speaks in that voice.
         </p>
       </div>
       <Field label="Character name">
@@ -122,10 +124,20 @@ export function VoiceSampler() {
       {voices.length ? (
         <ul className="flex flex-col gap-3">
           {voices.map((voice) => (
-            <li key={voice.id}>
-              <p className="mb-1 text-sm">
-                {voice.title} · @{voice.tag}
-              </p>
+            <li key={voice.id} className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm">
+                  {voice.title} · @{voice.tag}
+                  {voice.voiceId ? "" : " · not a usable voice yet"}
+                </p>
+                <Btn
+                  tone={activeVoiceId === voice.id ? "solid" : "quiet"}
+                  onClick={() => setActiveVoice(activeVoiceId === voice.id ? null : voice.id)}
+                  disabled={!voice.voiceId}
+                >
+                  {activeVoiceId === voice.id ? "Selected" : "Use this voice"}
+                </Btn>
+              </div>
               <VoiceClip id={voice.id} />
             </li>
           ))}

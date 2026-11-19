@@ -166,9 +166,39 @@ export const speakReply = createServerFn({ method: "POST" })
     const data = asRecord(input);
     const text = typeof data.text === "string" ? data.text.trim() : "";
     if (!text) throw new Error("Nothing to read.");
-    return { text: text.slice(0, 4000) };
+    const voiceId = typeof data.voiceId === "string" ? data.voiceId.trim().slice(0, 80) : "";
+    return { text: text.slice(0, 4000), voiceId };
   })
   .handler(async ({ data }) => {
     const { speakLine } = await import("./xai.server");
-    return speakLine(data.text);
+    return speakLine(data.text, data.voiceId || undefined);
+  });
+
+export const registerVoice = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const data = asRecord(input);
+    const name = typeof data.name === "string" ? data.name.trim() : "";
+    const wavBase64 = typeof data.wavBase64 === "string" ? data.wavBase64 : "";
+    if (!name) throw new Error("Name the character.");
+    if (!wavBase64) throw new Error("The voice sample was empty.");
+    if (wavBase64.length > 12_000_000) throw new Error("That sample is too long. Keep it under two minutes.");
+    return { name: name.slice(0, 80), wavBase64 };
+  })
+  .handler(async ({ data }) => {
+    const { registerCustomVoice } = await import("./xai.server");
+    return registerCustomVoice(data.name, data.wavBase64);
+  });
+
+export const transcribeSpeech = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const data = asRecord(input);
+    const audioBase64 = typeof data.audioBase64 === "string" ? data.audioBase64 : "";
+    const mime = typeof data.mime === "string" ? data.mime.slice(0, 80) : "audio/webm";
+    if (!audioBase64) throw new Error("The recording was empty.");
+    if (audioBase64.length > 8_000_000) throw new Error("That recording is too long.");
+    return { audioBase64, mime };
+  })
+  .handler(async ({ data }) => {
+    const { transcribeSpeech: hear } = await import("./xai.server");
+    return hear(data.audioBase64, data.mime);
   });
