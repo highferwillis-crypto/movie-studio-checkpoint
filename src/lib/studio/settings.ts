@@ -72,4 +72,4 @@ export function frameSize(aspect: string, maxSide: number): { width: number; hei
   return { width: snap(width), height: snap(height) };
 }
 
-export const DOWNLOAD_URL = "https://github.com/highferwillis-crypto/movie-studio/archive/refs/heads/main.zip";
+export const DOWNLOAD_URL = "https://github.com/highferwillis-crypto/movie-studio-checkpoint/archive/refs/heads/main.zip";

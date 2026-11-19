@@ -1,4 +1,6 @@
-# Movie Studio
+# Movie Studio — checkpoint
+
+This repository is the checkpoint modification. Choose any checkpoint model and render stills to the studio’s prompt, aspect, batch, and steps. The original studio stays at [movie-studio](https://github.com/highferwillis-crypto/movie-studio).
 
 A project desk for a film. One project holds the library. The stage renders stills and shots against that library. The cut assembles them. The editor talks from the open project’s names and tags.
 
