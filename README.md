@@ -32,15 +32,19 @@ npm install
 npm run dev
 ```
 
-Windows PowerShell often blocks `npm`. The clone still works. From the project folder, run the `.cmd` program instead:
+Windows Command Prompt does not understand `$HOME`. Clone into your user folder, then use `npm.cmd`:
 
-```powershell
-cd $HOME\movie-studio-checkpoint
+```bat
+cd /d %USERPROFILE%
+git clone https://github.com/highferwillis-crypto/movie-studio-checkpoint.git
+cd movie-studio-checkpoint
 npm.cmd install
 npm.cmd run dev
 ```
 
-Do not clone into `C:\WINDOWS\system32`. Clone into your user folder. If PowerShell still stops at `npm.ps1`, this one-time command allows your own scripts, then use `npm` as usual:
+Do not clone into `C:\WINDOWS\system32`, and do not run `npm` from `C:\Users\heils` itself. `npm.cmd` has to run inside the `movie-studio-checkpoint` folder.
+
+PowerShell can use the same `npm.cmd` commands. If PowerShell stops on `npm.ps1` and you want plain `npm` later:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
