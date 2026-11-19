@@ -79,13 +79,30 @@ export async function grabFrame(video: HTMLVideoElement): Promise<Blob> {
   return blob;
 }
 
-export async function compileMovie(blobs: Blob[], onStep?: (index: number, total: number) => void): Promise<Blob> {
-  if (!blobs.length) throw new Error("There are no reels to compile.");
+export type MovieTransition = "seamless" | "fade" | "dissolve" | "wipe";
+
+export type MovieSegment = {
+  blob: Blob;
+  inPoint: number;
+  outPoint: number;
+  transition: MovieTransition;
+};
+
+function asSegment(item: Blob | MovieSegment): MovieSegment {
+  if (item instanceof Blob) return { blob: item, inPoint: 0, outPoint: Number.POSITIVE_INFINITY, transition: "seamless" };
+  return item;
+}
+
+export async function compileMovie(items: Array<Blob | MovieSegment>, onStep?: (index: number, total: number) => void): Promise<Blob> {
+  const segments = items.map(asSegment);
+  if (!segments.length) throw new Error("There are no reels to compile.");
   const canvas = document.createElement("canvas");
   canvas.width = 1280;
   canvas.height = 720;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not open the movie.");
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   const audioCtx = new AudioContext();
   if (audioCtx.state === "suspended") await audioCtx.resume();
   const dest = audioCtx.createMediaStreamDestination();
@@ -102,9 +119,10 @@ export async function compileMovie(blobs: Blob[], onStep?: (index: number, total
   });
   recorder.start(500);
   try {
-    for (let index = 0; index < blobs.length; index += 1) {
-      onStep?.(index + 1, blobs.length);
-      await drawReelClip(ctx, canvas, blobs[index], audioCtx, dest);
+    for (let index = 0; index < segments.length; index += 1) {
+      onStep?.(index + 1, segments.length);
+      const prior = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      await drawReelClip(ctx, canvas, segments[index], index === 0 ? "seamless" : segments[index].transition, prior, audioCtx, dest);
     }
   } finally {
     recorder.stop();
@@ -118,19 +136,26 @@ export async function compileMovie(blobs: Blob[], onStep?: (index: number, total
 function drawReelClip(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
-  blob: Blob,
+  segment: MovieSegment,
+  transition: MovieTransition,
+  prior: ImageData,
   audioCtx: AudioContext,
   dest: MediaStreamAudioDestinationNode,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(segment.blob);
     const video = document.createElement("video");
     video.playsInline = true;
     video.src = url;
     const source = audioCtx.createMediaElementSource(video);
     source.connect(dest);
+    const frame = document.createElement("canvas");
+    frame.width = canvas.width;
+    frame.height = canvas.height;
+    const frameCtx = frame.getContext("2d");
     const finish = () => {
       source.disconnect();
+      video.pause();
       URL.revokeObjectURL(url);
       resolve();
     };
@@ -139,27 +164,63 @@ function drawReelClip(
       reject(new Error("A reel clip could not be read."));
     };
     video.onloadeddata = () => {
-      void video.play().then(() => {
-        const paint = () => {
-          if (video.ended) {
-            finish();
-            return;
-          }
-          ctx.fillStyle = "#000";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          const width = video.videoWidth || canvas.width;
-          const height = video.videoHeight || canvas.height;
-          const scale = Math.min(canvas.width / width, canvas.height / height);
-          const w = width * scale;
-          const h = height * scale;
-          ctx.drawImage(video, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
-          requestAnimationFrame(paint);
-        };
-        paint();
-      }).catch((error: unknown) => {
-        URL.revokeObjectURL(url);
-        reject(error instanceof Error ? error : new Error("A reel clip would not play."));
-      });
+      const arm = () => {
+        void video.play().then(() => {
+          const paint = () => {
+            if (video.ended || video.currentTime >= segment.outPoint - 0.03) {
+              finish();
+              return;
+            }
+            if (!frameCtx) {
+              finish();
+              return;
+            }
+            frameCtx.fillStyle = "#000";
+            frameCtx.fillRect(0, 0, frame.width, frame.height);
+            const width = video.videoWidth || frame.width;
+            const height = video.videoHeight || frame.height;
+            const scale = Math.min(frame.width / width, frame.height / height);
+            const w = width * scale;
+            const h = height * scale;
+            frameCtx.drawImage(video, (frame.width - w) / 2, (frame.height - h) / 2, w, h);
+            const elapsed = video.currentTime - segment.inPoint;
+            const blend = Math.max(0, Math.min(1, elapsed / 0.45));
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (transition === "fade") {
+              ctx.drawImage(frame, 0, 0);
+              ctx.fillStyle = `rgba(0,0,0,${1 - blend})`;
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+            } else if (transition === "dissolve") {
+              ctx.putImageData(prior, 0, 0);
+              ctx.globalAlpha = blend;
+              ctx.drawImage(frame, 0, 0);
+              ctx.globalAlpha = 1;
+            } else if (transition === "wipe") {
+              ctx.putImageData(prior, 0, 0);
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(0, 0, canvas.width * blend, canvas.height);
+              ctx.clip();
+              ctx.drawImage(frame, 0, 0);
+              ctx.restore();
+            } else {
+              ctx.drawImage(frame, 0, 0);
+            }
+            requestAnimationFrame(paint);
+          };
+          paint();
+        }).catch((error: unknown) => {
+          URL.revokeObjectURL(url);
+          reject(error instanceof Error ? error : new Error("A reel clip would not play."));
+        });
+      };
+      if (segment.inPoint > 0.05) {
+        video.onseeked = () => arm();
+        video.currentTime = segment.inPoint;
+      } else {
+        arm();
+      }
     };
   });
 }

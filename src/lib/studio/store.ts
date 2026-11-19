@@ -144,6 +144,10 @@ type StudioState = {
   removeReelShot: (assetId: string) => Promise<void>;
   rerenderReelShot: (assetId: string, prompt: string) => Promise<void>;
   compileProjectMovie: () => Promise<void>;
+  placeOnTimeline: (assetId: string) => Promise<void>;
+  setClipLength: (id: string, seconds: number) => Promise<void>;
+  setClipTransition: (id: string, transition: CutClip["transition"]) => Promise<void>;
+  moveClipTo: (id: string, index: number) => Promise<void>;
   addToCut: (assetId: string, hold?: number) => Promise<void>;
   uploadIntoCut: (files: File[]) => Promise<void>;
   newCut: () => Promise<void>;
@@ -1084,24 +1088,27 @@ export const useStudio = create<StudioState>((set, get) => ({
       set({ error: "Open a project." });
       return;
     }
-    const reels = get()
-      .reels.filter((reel) => reel.projectId === projectId)
-      .sort((a, b) => a.updatedAt - b.updatedAt);
-    const ids = reels.flatMap((reel) => reel.shots.map((shot) => shot.assetId));
-    if (!ids.length) {
-      set({ error: "This project has no reels to compile." });
+    const cut = currentCut(get);
+    if (!cut || !cut.clips.length) {
+      set({ error: "Drag reels onto the timeline before compiling." });
       return;
     }
-    set({ busy: true, busyLabel: "Compiling the reels…", error: "", notice: "" });
+    set({ busy: true, busyLabel: "Compiling the timeline…", error: "", notice: "" });
     try {
-      const blobs: Blob[] = [];
-      for (const id of ids) {
-        const blob = await dbGetBlob(id);
-        if (blob) blobs.push(blob);
+      const segments = [];
+      for (const clip of cut.clips) {
+        const blob = await dbGetBlob(clip.assetId);
+        if (!blob) continue;
+        segments.push({
+          blob,
+          inPoint: clip.inPoint,
+          outPoint: clip.outPoint,
+          transition: clip.transition ?? "seamless",
+        });
       }
-      if (!blobs.length) throw new Error("The reel files are missing.");
-      const movie = await compileMovie(blobs, (index, total) => {
-        set({ busyLabel: `Compiling clip ${index} of ${total}… This plays through in real time.` });
+      if (!segments.length) throw new Error("The reel files are missing.");
+      const movie = await compileMovie(segments, (index, total) => {
+        set({ busyLabel: `Compiling segment ${index} of ${total}… This plays through in real time.` });
       });
       const duration = (await probeDuration(movie)) || 0;
       const folderId = folderIdFor(get().folders, projectId, "reels");
@@ -1114,7 +1121,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         tag,
         kind: "video",
         mime: movie.type || "video/webm",
-        prompt: "Compiled from this project's reels.",
+        prompt: "Compiled from the movie timeline.",
         text: "",
         blob: movie,
         duration,
@@ -1129,7 +1136,7 @@ export const useStudio = create<StudioState>((set, get) => ({
         assets: [asset, ...get().assets],
         busy: false,
         busyLabel: "",
-        notice: `Compiled @${tag}. It is filed with the reels and downloaded. It was not added back onto a reel.`,
+        notice: `Compiled @${tag} from the timeline. It is filed and downloaded, and was not added back onto a reel.`,
       });
     } catch (error) {
       set({ busy: false, busyLabel: "", error: messageOf(error) });
@@ -1155,6 +1162,59 @@ export const useStudio = create<StudioState>((set, get) => ({
     const cut = await ensureCut(set, get, projectId);
     await writeCut(set, get, { ...cut, clips: [...cut.clips, clip], updatedAt: Date.now() });
     set({ notice: `Added @${asset.tag} to the cut.`, error: "", pane: "cut" });
+  },
+
+  placeOnTimeline: async (assetId) => {
+    const asset = get().assets.find((item) => item.id === assetId);
+    const projectId = get().activeProjectId;
+    if (!asset || !projectId || asset.projectId !== projectId) return;
+    if (asset.kind !== "image" && asset.kind !== "video") {
+      set({ error: "The timeline takes a picture or a reel." });
+      return;
+    }
+    const clip: CutClip = {
+      id: uid(),
+      assetId,
+      kind: asset.kind,
+      label: asset.tag,
+      inPoint: 0,
+      outPoint: 2,
+      transition: "seamless",
+    };
+    const cut = await ensureCut(set, get, projectId);
+    await writeCut(set, get, { ...cut, clips: [...cut.clips, clip], updatedAt: Date.now() });
+    set({ notice: `Placed @${asset.tag} at 2 seconds. Drag the edge open, up to 15.`, error: "", pane: "cut" });
+  },
+
+  setClipLength: async (id, seconds) => {
+    const cut = currentCut(get);
+    if (!cut) return;
+    const clips = cut.clips.map((clip) => {
+      if (clip.id !== id) return clip;
+      const asset = get().assets.find((item) => item.id === clip.assetId);
+      const full = Math.min(15, Math.max(2, asset?.kind === "image" ? 15 : asset?.duration || 15));
+      return { ...clip, inPoint: 0, outPoint: Math.min(full, Math.max(2, seconds)) };
+    });
+    await writeCut(set, get, { ...cut, clips, updatedAt: Date.now() });
+  },
+
+  setClipTransition: async (id, transition) => {
+    const cut = currentCut(get);
+    if (!cut || !transition) return;
+    const clips = cut.clips.map((clip) => (clip.id === id ? { ...clip, transition } : clip));
+    await writeCut(set, get, { ...cut, clips, updatedAt: Date.now() });
+  },
+
+  moveClipTo: async (id, index) => {
+    const cut = currentCut(get);
+    if (!cut) return;
+    const from = cut.clips.findIndex((clip) => clip.id === id);
+    if (from < 0) return;
+    const clips = [...cut.clips];
+    const [clip] = clips.splice(from, 1);
+    const target = Math.max(0, Math.min(clips.length, index > from ? index - 1 : index));
+    clips.splice(target, 0, clip);
+    await writeCut(set, get, { ...cut, clips, updatedAt: Date.now() });
   },
 
   uploadIntoCut: async (files) => {

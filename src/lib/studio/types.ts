@@ -58,6 +58,8 @@ export type Reel = {
   updatedAt: number;
 };
 
+export type CutTransition = "seamless" | "fade" | "dissolve" | "wipe";
+
 export type CutClip = {
   id: string;
   assetId: string;
@@ -65,6 +67,7 @@ export type CutClip = {
   label: string;
   inPoint: number;
   outPoint: number;
+  transition?: CutTransition;
 };
 
 export type Cut = {
