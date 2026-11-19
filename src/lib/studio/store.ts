@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { askEditor, beginShot, generateCustom, generateStills, planNextShot, pollShot, registerVoice, speakReply } from "@/lib/studio/api.functions";
 import { runLocalCheckpoint, runLocalVideo } from "@/lib/studio/comfy-local";
 import { dbAll, dbDel, dbDelBlob, dbGetBlob, dbPut, dbPutBlob, uid } from "@/lib/studio/idb";
-import { blobToWavBase64, fileToJpegDataUrl, mixVoiceOntoVideo, probeDuration, videoPoster } from "@/lib/studio/media";
+import { blobToWavBase64, compileMovie, fileToJpegDataUrl, mixVoiceOntoVideo, probeDuration, videoPoster } from "@/lib/studio/media";
 import {
   STYLES,
   buildDigest,
@@ -142,6 +142,8 @@ type StudioState = {
   discardPreview: () => void;
   keepPreview: (intoReel: boolean) => Promise<void>;
   removeReelShot: (assetId: string) => Promise<void>;
+  rerenderReelShot: (assetId: string, prompt: string) => Promise<void>;
+  compileProjectMovie: () => Promise<void>;
   addToCut: (assetId: string, hold?: number) => Promise<void>;
   uploadIntoCut: (files: File[]) => Promise<void>;
   newCut: () => Promise<void>;
@@ -790,43 +792,36 @@ export const useStudio = create<StudioState>((set, get) => ({
         return;
       }
 
-      const startedShot = await beginShot({
-        data: {
-          prompt: compiled.prompt,
-          duration: get().duration,
-          aspectRatio: get().aspect,
-          resolution: get().motionRes,
-          pinFirst: get().pinFirst,
-          references: compiled.references,
-        },
+      const wanted = Math.min(30, Math.max(1, Math.round(get().duration) || 6));
+      let blob = await pullShot({
+        prompt: compiled.prompt,
+        seconds: Math.min(15, wanted),
+        aspect: get().aspect,
+        resolution: get().motionRes,
+        pinFirst: get().pinFirst,
+        references: compiled.references,
+        token,
+        set,
+        started,
       });
       if (token !== generation) return;
-      if (!startedShot.ok) {
-        set({ busy: false, busyLabel: "", error: startedShot.error });
-        return;
-      }
-      if (startedShot.note) set({ warnings: [...get().warnings, startedShot.note] });
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        await sleep(5000);
+      if (wanted > 15) {
+        set({ busyLabel: "Rendering the second half…" });
+        const rest = await pullShot({
+          prompt: `${compiled.prompt}\n\nContinue this same shot from the next moment. Do not restart the scene.`,
+          seconds: wanted - 15,
+          aspect: get().aspect,
+          resolution: get().motionRes,
+          pinFirst: false,
+          references: [],
+          token,
+          set,
+          started,
+        });
         if (token !== generation) return;
-        const status = await pollShot({ data: { requestId: startedShot.requestId } });
-        if (token !== generation) return;
-        if (!status.ok) {
-          set({ busy: false, busyLabel: "", error: status.error });
-          return;
-        }
-        const elapsed = Math.round((Date.now() - started) / 1000);
-        set({ busyLabel: `Rendering shot · ${elapsed}s` });
-        if (status.status === "done") break;
-        if (attempt === 49) throw new Error("The shot is still rendering. Try again in a moment.");
+        set({ busyLabel: "Joining the two halves…" });
+        blob = await compileMovie([blob, rest]);
       }
-      set({ busyLabel: "Fetching the shot…" });
-      const response = await fetch(`/api/studio-media?requestId=${encodeURIComponent(startedShot.requestId)}`);
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error || "Could not download the shot.");
-      }
-      const blob = await response.blob();
       if (token !== generation) return;
       set({ busyLabel: "Speaking in the selected voice…" });
       const voiced = await speakShot(get, blob, compiled.prompt);
@@ -1001,7 +996,7 @@ export const useStudio = create<StudioState>((set, get) => ({
           playerMode: "reel",
         });
       }
-      notice = `Filed @${tag} on the reel. Length is the sum of the shots, each up to 15 seconds.`;
+      notice = `Filed @${tag} on the reel. A single render stops at 15 seconds. A 30 second shot is two renders joined.`;
     }
     set({ notice, error: "" });
   },
@@ -1015,6 +1010,130 @@ export const useStudio = create<StudioState>((set, get) => ({
       reels: get().reels.map((item) => (item.id === next.id ? next : item)),
       playShots: get().playShots.filter((shot) => shot.assetId !== assetId),
     });
+  },
+
+  rerenderReelShot: async (assetId, prompt) => {
+    if (get().busy) return;
+    const text = prompt.trim();
+    if (!text) {
+      set({ error: "Write the prompt for this reel." });
+      return;
+    }
+    const asset = get().assets.find((item) => item.id === assetId);
+    if (!asset) return;
+    const token = ++generation;
+    const started = Date.now();
+    const wanted = Math.min(30, Math.max(1, Math.round(get().duration) || 6));
+    set({ busy: true, busyLabel: `Re-rendering @${asset.tag}…`, error: "", notice: "" });
+    try {
+      let blob = await pullShot({
+        prompt: text,
+        seconds: Math.min(15, wanted),
+        aspect: get().aspect,
+        resolution: get().motionRes,
+        pinFirst: false,
+        references: [],
+        token,
+        set,
+        started,
+      });
+      if (token !== generation) return;
+      if (wanted > 15) {
+        const rest = await pullShot({
+          prompt: `${text}\n\nContinue this same shot from the next moment. Do not restart the scene.`,
+          seconds: wanted - 15,
+          aspect: get().aspect,
+          resolution: get().motionRes,
+          pinFirst: false,
+          references: [],
+          token,
+          set,
+          started,
+        });
+        if (token !== generation) return;
+        set({ busyLabel: "Joining the two halves…" });
+        blob = await compileMovie([blob, rest]);
+      }
+      const voiced = await speakShot(get, blob, text);
+      const duration = (await probeDuration(voiced.blob)) || wanted;
+      await dbPutBlob(assetId, voiced.blob);
+      const next = { ...asset, prompt: text, duration, mime: voiced.blob.type || asset.mime };
+      await dbPut("assets", next);
+      const existing = urlCache.get(assetId);
+      if (existing) URL.revokeObjectURL(existing);
+      urlCache.delete(assetId);
+      const url = await cachedUrl(assetId, voiced.blob);
+      set({
+        assets: get().assets.map((item) => (item.id === assetId ? next : item)),
+        playShots: get().playShots.map((shot) => (shot.assetId === assetId ? { ...shot, url, duration } : shot)),
+        busy: false,
+        busyLabel: "",
+        notice: `Re-rendered @${asset.tag}. This reel now uses that version.`,
+      });
+    } catch (error) {
+      if (token !== generation) return;
+      set({ busy: false, busyLabel: "", error: messageOf(error) });
+    }
+  },
+
+  compileProjectMovie: async () => {
+    if (get().busy) return;
+    const projectId = get().activeProjectId;
+    const project = get().projects.find((item) => item.id === projectId);
+    if (!projectId || !project) {
+      set({ error: "Open a project." });
+      return;
+    }
+    const reels = get()
+      .reels.filter((reel) => reel.projectId === projectId)
+      .sort((a, b) => a.updatedAt - b.updatedAt);
+    const ids = reels.flatMap((reel) => reel.shots.map((shot) => shot.assetId));
+    if (!ids.length) {
+      set({ error: "This project has no reels to compile." });
+      return;
+    }
+    set({ busy: true, busyLabel: "Compiling the reels…", error: "", notice: "" });
+    try {
+      const blobs: Blob[] = [];
+      for (const id of ids) {
+        const blob = await dbGetBlob(id);
+        if (blob) blobs.push(blob);
+      }
+      if (!blobs.length) throw new Error("The reel files are missing.");
+      const movie = await compileMovie(blobs, (index, total) => {
+        set({ busyLabel: `Compiling clip ${index} of ${total}… This plays through in real time.` });
+      });
+      const duration = (await probeDuration(movie)) || 0;
+      const folderId = folderIdFor(get().folders, projectId, "reels");
+      const title = `${project.title} movie`;
+      const tag = uniqueTag(get, projectId, tagFromTitle(title));
+      const asset = await makeStoredAsset({
+        projectId,
+        folderId,
+        title,
+        tag,
+        kind: "video",
+        mime: movie.type || "video/webm",
+        prompt: "Compiled from this project's reels.",
+        text: "",
+        blob: movie,
+        duration,
+      });
+      const url = URL.createObjectURL(movie);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${title}.webm`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+      set({
+        assets: [asset, ...get().assets],
+        busy: false,
+        busyLabel: "",
+        notice: `Compiled @${tag}. It is filed with the reels and downloaded. It was not added back onto a reel.`,
+      });
+    } catch (error) {
+      set({ busy: false, busyLabel: "", error: messageOf(error) });
+    }
   },
 
   addToCut: async (assetId, hold = 4) => {
@@ -1473,6 +1592,48 @@ async function queueUploads(
     notice: "Name it and add tags, then file it.",
     error: "",
   });
+}
+
+async function pullShot(input: {
+  prompt: string;
+  seconds: number;
+  aspect: string;
+  resolution: "480p" | "720p" | "1080p";
+  pinFirst: boolean;
+  references: { dataUrl: string; tag: string }[];
+  token: number;
+  set: (partial: Partial<StudioState>) => void;
+  started: number;
+}): Promise<Blob> {
+  const startedShot = await beginShot({
+    data: {
+      prompt: input.prompt,
+      duration: Math.min(15, Math.max(1, Math.round(input.seconds))),
+      aspectRatio: input.aspect,
+      resolution: input.resolution,
+      pinFirst: input.pinFirst,
+      references: input.references,
+    },
+  });
+  if (input.token !== generation) throw new Error("Render cancelled.");
+  if (!startedShot.ok) throw new Error(startedShot.error);
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    await sleep(5000);
+    if (input.token !== generation) throw new Error("Render cancelled.");
+    const status = await pollShot({ data: { requestId: startedShot.requestId } });
+    if (!status.ok) throw new Error(status.error);
+    const elapsed = Math.round((Date.now() - input.started) / 1000);
+    input.set({ busyLabel: `Rendering shot · ${elapsed}s` });
+    if (status.status === "done") break;
+    if (attempt === 49) throw new Error("The shot is still rendering. Try again in a moment.");
+  }
+  input.set({ busyLabel: "Fetching the shot…" });
+  const response = await fetch(`/api/studio-media?requestId=${encodeURIComponent(startedShot.requestId)}`);
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error || "Could not download the shot.");
+  }
+  return response.blob();
 }
 
 async function speakShot(

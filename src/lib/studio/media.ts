@@ -79,6 +79,91 @@ export async function grabFrame(video: HTMLVideoElement): Promise<Blob> {
   return blob;
 }
 
+export async function compileMovie(blobs: Blob[], onStep?: (index: number, total: number) => void): Promise<Blob> {
+  if (!blobs.length) throw new Error("There are no reels to compile.");
+  const canvas = document.createElement("canvas");
+  canvas.width = 1280;
+  canvas.height = 720;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not open the movie.");
+  const audioCtx = new AudioContext();
+  if (audioCtx.state === "suspended") await audioCtx.resume();
+  const dest = audioCtx.createMediaStreamDestination();
+  const picture = canvas.captureStream(24);
+  const mixed = new MediaStream([...picture.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  const mime = MediaRecorder.isTypeSupported("video/webm") ? "video/webm" : "";
+  const recorder = new MediaRecorder(mixed, mime ? { mimeType: mime } : undefined);
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (event) => {
+    if (event.data.size) chunks.push(event.data);
+  };
+  const finished = new Promise<Blob>((resolve) => {
+    recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || "video/webm" }));
+  });
+  recorder.start(500);
+  try {
+    for (let index = 0; index < blobs.length; index += 1) {
+      onStep?.(index + 1, blobs.length);
+      await drawReelClip(ctx, canvas, blobs[index], audioCtx, dest);
+    }
+  } finally {
+    recorder.stop();
+  }
+  const movie = await finished;
+  await audioCtx.close();
+  if (!movie.size) throw new Error("The movie compiled empty.");
+  return movie;
+}
+
+function drawReelClip(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  blob: Blob,
+  audioCtx: AudioContext,
+  dest: MediaStreamAudioDestinationNode,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.playsInline = true;
+    video.src = url;
+    const source = audioCtx.createMediaElementSource(video);
+    source.connect(dest);
+    const finish = () => {
+      source.disconnect();
+      URL.revokeObjectURL(url);
+      resolve();
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("A reel clip could not be read."));
+    };
+    video.onloadeddata = () => {
+      void video.play().then(() => {
+        const paint = () => {
+          if (video.ended) {
+            finish();
+            return;
+          }
+          ctx.fillStyle = "#000";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          const width = video.videoWidth || canvas.width;
+          const height = video.videoHeight || canvas.height;
+          const scale = Math.min(canvas.width / width, canvas.height / height);
+          const w = width * scale;
+          const h = height * scale;
+          ctx.drawImage(video, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+          requestAnimationFrame(paint);
+        };
+        paint();
+      }).catch((error: unknown) => {
+        URL.revokeObjectURL(url);
+        reject(error instanceof Error ? error : new Error("A reel clip would not play."));
+      });
+    };
+  });
+}
+
 export async function blobToWavBase64(blob: Blob): Promise<string> {
   const ctx = new AudioContext();
   try {

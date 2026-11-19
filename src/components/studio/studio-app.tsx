@@ -98,7 +98,7 @@ export function StudioApp() {
           Stage
         </Btn>
         <Btn tone={pane === "cut" ? "solid" : "quiet"} onClick={() => setPane("cut")}>
-          Cut
+          Movie
         </Btn>
         <Btn tone={pane === "settings" ? "solid" : "quiet"} onClick={() => setPane("settings")}>
           Settings
@@ -109,7 +109,7 @@ export function StudioApp() {
           [
             ["library", "Library"],
             ["stage", "Stage"],
-            ["cut", "Cut"],
+            ["cut", "Movie"],
             ["settings", "Settings"],
             ["chat", "Editor"],
           ] as const

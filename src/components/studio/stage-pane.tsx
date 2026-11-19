@@ -166,7 +166,7 @@ export function StagePane() {
                   aria-label="Shot length"
                   type="range"
                   min={1}
-                  max={15}
+                  max={30}
                   value={duration}
                   onChange={(event) => patchStage({ duration: Number(event.target.value) })}
                   className="mt-3 w-full accent-bone"
@@ -247,7 +247,7 @@ export function StagePane() {
               : `@tags pull files from any folder in ${project.title}. A title you keep becomes the tag, and its prompt stays active.`
             : "No project selected, so this render is free. File it later by choosing a project first."}
           {mode === "motion"
-            ? " A shot is at most 15 seconds. Stack kept shots on the reel for a scene that runs minutes. Cadence is written into the prompt as a film look."
+            ? " A single render stops at 15 seconds. Set 16–30 and this shot is two renders joined into one."
             : " Stills stay in the bay until you keep them."}
         </p>
         {liveWarnings.length ? (

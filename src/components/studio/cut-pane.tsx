@@ -3,6 +3,7 @@ import { dbGetBlob } from "@/lib/studio/idb";
 import { formatTime } from "@/lib/studio/prompt";
 import { useStudio } from "@/lib/studio/store";
 import type { CutClip } from "@/lib/studio/types";
+import { MovieEditor } from "@/components/studio/movie-editor";
 import { Btn, controlClass } from "@/components/studio/ui";
 
 export function CutPane({
@@ -53,6 +54,7 @@ export function CutPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-3 md:p-4">
+      <MovieEditor />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="font-display text-2xl leading-none">Cut</h2>
