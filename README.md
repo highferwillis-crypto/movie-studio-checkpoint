@@ -19,11 +19,61 @@ Pictures and shots stay in the browser (IndexedDB). Generation calls the xAI API
 
 In Settings you can point stills at another image API (`POST /v1/images/generations`) or choose a checkpoint model of any type. The studio prompt, aspect, batch, and laptop steps drive that render. The checkpoint file name is what the local server loads. Shots stay on the built-in engine.
 
-## Run
+## Install
+
+Requires [Node.js 22](https://nodejs.org/).
+
+Directly from this GitHub address:
 
 ```bash
+git clone https://github.com/highferwillis-crypto/movie-studio-checkpoint.git
+cd movie-studio-checkpoint
 npm install
-XAI_API_KEY=your_key npm run dev
+npm run dev
 ```
 
-The studio is at `/studio`. Comfy Desk is at `/`.
+Or download the zip from the green **Code** button, unzip it, then run `npm install` and `npm run dev` in that folder.
+
+The app serves on port 8080.
+
+- Studio: [http://127.0.0.1:8080/studio](http://127.0.0.1:8080/studio)
+- Comfy Desk: [http://127.0.0.1:8080/](http://127.0.0.1:8080/)
+
+### Built-in stills and shots
+
+The built-in engine needs an xAI key. Do not commit the key.
+
+```bash
+export XAI_API_KEY=your_key
+npm run dev
+```
+
+Windows PowerShell:
+
+```powershell
+$env:XAI_API_KEY="your_key"
+npm run dev
+```
+
+Windows Command Prompt:
+
+```bat
+set XAI_API_KEY=your_key
+npm run dev
+```
+
+### Checkpoint stills
+
+No key is required for this path.
+
+1. Start the local model server on this machine at `http://127.0.0.1:8188`, with cross-origin access open. The checkpoint file you choose has to be one that server can load.
+2. Open the studio and go to **Settings**.
+3. Choose **Checkpoint**.
+4. Choose the model file from this computer, a jump drive, or an external drive. Any checkpoint type. The studio keeps the file name.
+5. On the stage, set **Stills** and render.
+
+The open project supplies the prompt. Aspect, batch, and the laptop steps (Efficient, Balanced, or Full) set the size of the render. A checkpoint makes stills only. Shots stay on **Built-in**.
+
+### Another image API
+
+In **Settings**, choose **API server**. Set the address, the model, and the key. The server must accept `POST /images/generations` with a bearer key, a prompt, `n`, and `size`. The key stays in this browser. It is not written into the settings file.
