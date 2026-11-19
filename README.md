@@ -32,6 +32,20 @@ npm install
 npm run dev
 ```
 
+Windows PowerShell often blocks `npm`. The clone still works. From the project folder, run the `.cmd` program instead:
+
+```powershell
+cd $HOME\movie-studio-checkpoint
+npm.cmd install
+npm.cmd run dev
+```
+
+Do not clone into `C:\WINDOWS\system32`. Clone into your user folder. If PowerShell still stops at `npm.ps1`, this one-time command allows your own scripts, then use `npm` as usual:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
 Or download the zip from the green **Code** button, unzip it, then run `npm install` and `npm run dev` in that folder.
 
 The app serves on port 8080.
